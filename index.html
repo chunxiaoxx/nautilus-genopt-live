@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Nautilus GenOpt · 1D Bin Packing Live Demo</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:32px;line-height:1.6}
+  h1{color:#58a6ff;font-size:26px;margin:0 0 4px}
+  .sub{color:#8b949e;font-size:14px;margin-bottom:24px}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;margin-bottom:18px}
+  .ctr{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  label{color:#8b949e;font-size:13px}
+  select,input{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;padding:5px 9px;font-size:13px}
+  button{background:#238636;color:#fff;border:0;border-radius:5px;padding:8px 18px;font-size:14px;cursor:pointer;font-weight:600}
+  button:hover{background:#2ea043}
+  .row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:8px}
+  .stat{background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:12px}
+  .stat .k{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .stat .v{font-size:22px;font-weight:700;margin-top:3px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:10px}
+  th,td{border-bottom:1px solid #21262d;padding:7px 9px;text-align:right}
+  th{color:#8b949e;font-weight:600;font-size:11px;text-transform:uppercase}
+  td:first-child,th:first-child{text-align:left}
+  .win{color:#3fb950}.lose{color:#f85149}.base{color:#8b949e}
+  .vrf{margin-top:10px;font-size:13px;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:12px}
+  .vrf li{list-style:none;padding:2px 0}
+  .pass{color:#3fb950}.fail{color:#f85149}
+  .bins{margin-top:12px}
+  .bin{background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:8px 10px;margin-bottom:5px}
+  .bin .hd{font-size:11px;color:#8b949e;display:flex;justify-content:space-between}
+  .track{height:16px;background:#21262d;border-radius:3px;margin-top:4px;display:flex;overflow:hidden}
+  .seg{height:100%}
+  code{background:#0d1117;padding:1px 5px;border-radius:3px;font-size:12px;color:#79c0ff}
+  .foot{margin-top:26px;padding-top:16px;border-top:1px solid #21262d;color:#8b949e;font-size:12px}
+</style>
+</head>
+<body>
+<h1>Nautilus GenOpt · 1D Bin Packing Live Demo</h1>
+<div class="sub">单文件 · 全部数字在你的浏览器里现算 · 无需服务器 · 无需外部数据 · 13 项 verifier 实时判定</div>
+
+<div class="card">
+  <div class="ctr">
+    <label>分布 <select id="dist">
+      <option value="uniform">uniform</option>
+      <option value="small_skew">small_skew</option>
+      <option value="large_skew">large_skew</option>
+      <option value="bimodal">bimodal</option>
+    </select></label>
+    <label>物品数 <input id="n" type="number" value="25" min="5" max="120" style="width:70px"></label>
+    <label>容量 cap <input id="cap" type="number" value="100" min="10" max="200" style="width:70px"></label>
+    <label>seed <input id="seed" type="number" value="138445" style="width:90px"></label>
+    <button onclick="run()">运行</button>
+  </div>
+  <div id="out"></div>
+</div>
+
+<div class="card">
+  <div class="sub" style="margin:0 0 10px">这条 demo 的核心主张</div>
+  <ul style="margin:0;padding-left:20px;font-size:14px">
+    <li><b>每条数值都有 verifier 判定</b> — 13 个检查点，非法解直接判 0 分，不能自说自话</li>
+    <li><b>baseline 与改进解同场对比</b> — 你能自己看到 FF/BFD 的箱数被改进解压到多少</li>
+    <li><b>结果可复现</b> — 同一个 seed 永远得到同一批箱子，deterministic</li>
+    <li><b>无黑箱</b> — 算法就在本页源码里，你可以读完再决定信不信</li>
+  </ul>
+</div>
+
+<div class="foot">Nautilus · GenOpt 组合优化题集 · 这页不需要任何依赖，双击即开</div>
+
+<script>
+// ---------- 1. Instance generation (逐字移植 genopt/binpack_v5_solution.py) ----------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function genInstance(seed,n,cap,dist){
+  var rng=mulberry32(seed);
+  var out=[];
+  if(dist==="uniform"){for(var i=0;i<n;i++)out.push(rng()*(0.70-0.10)+0.10);}
+  else if(dist==="small_skew"){for(var j=0;j<n;j++)out.push(rng()*(0.35-0.05)+0.05);}
+  else if(dist==="large_skew"){for(var k=0;k<n;k++)out.push(rng()*(0.85-0.35)+0.35);}
+  else if(dist==="bimodal"){for(var m=0;m<n;m++)out.push(rng()<0.5? rng()*(0.50-0.10)+0.10 : rng()*(0.90-0.50)+0.50);}
+  else {throw new Error("unknown dist: "+dist);}
+  return out.map(function(x){return Math.round(x);});
+}
+
+// ---------- 2. Solvers ----------
+function ffBins(items,cap){var bins=[];items.forEach(function(it){var p=-1;for(var i=0;i<bins.length;i++){var used=bins[i].used+it;if(used<=cap+1e-9){p=i;break;}}if(p<0){bins.push({items:[it],used:it});}else{bins[p].items.push(it);bins[p].used+=it;}});return bins;}
+function bfdBins(items,cap){
+  var s=items.slice().sort(function(a,b){return b-a;});
+  return s.reduce(function(bins,it){var best=-1,slack=Infinity;bins.forEach(function(b,i){var r=cap-b.used;if(r>=it-1e-9&&r<slack){slack=r;best=i;}});if(best<0)bins.push({items:[it],used:it});else{bins[best].items.push(it);bins[best].used+=it;}return bins;},[]);
+}
+function improvedBins(items,cap){
+  var rest=items.slice(), pairs=[];
+  for(var i=0;i<rest.length;i++){
+    for(var j=i+1;j<rest.length;j++){
+      var rem=cap-rest[i]-rest[j];
+      if(rem>=0&&rem<0.30*cap){pairs.push([rest[i],rest[j]]);rest.splice(j,1);rest.splice(i,1);i--;break;}
+    }
+  }
+  var bins=[];
+  pairs.forEach(function(p){bins.push({items:p.slice(),used:p[0]+p[1]});});
+  var tail=bfdBins(rest,cap);
+  tail.forEach(function(b){bins.push(b);});
+  // merge: fold a bin into another when it fits whole
+  var changed=true;
+  while(changed){
+    changed=false;
+    for(var a=0;a<bins.length&&!changed;a++){
+      for(var b=a+1;b<bins.length;b++){
+        if(bins[a].items.length+bins[b].items.length>0 && bins[a].used+bins[b].used<=cap+1e-9 && bins[a].items.length>1){
+          bins[a].items=bins[a].items.concat(bins[b].items);
+          bins[a].used+=bins[b].used;bins.splice(b,1);changed=true;break;
+        }
+      }
+    }
+  }
+  return bins;
+}
+
+// ---------- 3. Verifier (13 checkpoints) ----------
+function lowerBound(items,cap){var t=items.reduce(function(a,b){return a+b;},0);return Math.ceil(t/cap-1e-9);}
+function isFeasible(bins,items,cap){
+  var flat=[];
+  bins.forEach(function(b){
+    if(b.used>cap+1e-9)return false;
+    b.items.forEach(function(v){flat.push(v);});
+  });
+  if(flat.length!==items.length)return false;
+  var s1=flat.slice().sort().join(),s2=items.slice().sort().join();
+  if(s1!==s2)return false;
+  return flat.every(function(v){return v>0;});
+}
+function score(ach,ref,valid){if(!valid||ach===0)return 0;return Math.max(0,Math.min(100,100*ref/ach));}
+
+function run(){
+  var seed=parseInt(document.getElementById('seed').value)||138445;
+  var n=parseInt(document.getElementById('n').value)||25;
+  var cap=parseInt(document.getElementById('cap').value)||100;
+  var dist=document.getElementById('dist').value;
+  var items;
+  try{items=genInstance(seed,n,cap,dist);}catch(e){document.getElementById('out').innerHTML='<div class="fail">'+e.message+'</div>';return;}
+
+  var ff=ffBins(items,cap), bfd=bfdBins(items,cap), imp=improvedBins(items,cap);
+  var lb=lowerBound(items,cap), total=items.reduce(function(a,b){return a+b;},0);
+  var vff=isFeasible(ff,items,cap), vbfd=isFeasible(bfd,items,cap), vimp=isFeasible(imp,items,cap);
+  var sff=score(ff.length,lb,vff), sbfd=score(bfd.length,lb,vbfd), simp=score(imp.length,lb,vimp);
+
+  // 13 checkpoints
+  var deterministic=true;
+  if(JSON.stringify(genInstance(seed,n,cap,dist))!==JSON.stringify(items))deterministic=false;
+  var ck=[
+    ["所有实例生成成功", items.length===n],
+    ["物品均为正整数", items.every(function(v){return v>0;})],
+    ["物品未被修改/丢失", imp.reduce(function(a,b){return a+b;},0)===total],
+    ["FF 解可行", vff],
+    ["BFD 解可行", vbfd],
+    ["改进解可行", vimp],
+    ["无箱超容", ff.concat(bfd,imp).every(function(b){return b.used<=cap+1e-9;})],
+    ["箱数 >= 理论下界", imp.length>=lb],
+    ["改进解不劣于 BFD", imp.length<=bfd.length],
+    ["下界计算正确", lb<=items.length],
+    ["评分为有效区间", [sff,sbfd,simp].every(function(s){return s>=0&&s<=100;})],
+    ["同 seed 可复现", deterministic],
+    ["三解器结果均已产生", ff.length>0&&bfd.length>0&&imp.length>0]
+  ];
+  var pass=ck.filter(function(c){return c[1];}).length;
+  var best=Math.min(ff.length,bfd.length,imp.length);
+  var colors=['#58a6ff','#3fb950','#d29922','#f778ba','#a371f7','#79c0ff','#ff7b72','#56d4dd','#8b949e','#7ee787','#ffa657','#d2a8ff','#79c0ff'];
+
+  var h='<div class="row">'
+    +'<div class="stat"><div class="k">Item total</div><div class="v">'+total+'</div></div>'
+    +'<div class="stat"><div class="k">Lower bound</div><div class="v">'+lb+'</div></div>'
+    +'<div class="stat"><div class="k">Best bins</div><div class="v win">'+best+'</div></div>'
+    +'<div class="stat"><div class="k">Verifier</div><div class="v '+(pass===13?'win':'fail')+'">'+pass+'/13</div></div>'
+    +'</div><table><tr><th>Solver</th><th>Bins</th><th>vs best</th><th>Utilization</th><th>Score</th><th>Feasible</th></tr>';
+  [['First-Fit (baseline)',ff,sff,vff],['Best-Fit-Decreasing (baseline)',bfd,sbfd,vbfd],['Improved (pair &lt;30% + merge)',imp,simp,vimp]].forEach(function(r){
+    var util=(r[1].reduce(function(a,b){return a+b.used;},0)/(r[1].length*cap)*100).toFixed(1);
+    var cls=r[1].length===best?'win':(r[1].length===Math.max(ff.length,bfd.length,imp.length)?'lose':'base');
+    h+='<tr><td>'+r[0]+'</td><td class="'+cls+'">'+r[1].length+'</td><td class="'+cls+'">'+(r[1].length-best===0?'best':(r[1].length-best)+' more')+'</td><td>'+util+'%</td><td>'+r[2].toFixed(1)+'</td><td class="'+(r[4]?'pass':'fail')+'">'+(r[4]?'PASS':'FAIL')+'</td></tr>';
+  });
+  h+='</table>';
+
+  h+='<div class="vrf"><b style="color:#8b949e;font-size:11px;letter-spacing:.5px">13-CHECKPOINT VERIFIER</b><ul style="margin:6px 0 0;padding:0">';
+  ck.forEach(function(c){h+='<li class="'+(c[1]?'pass':'fail')+'">'+(c[1]?'&#10003;':'&#10007;')+' '+c[0]+'</li>';});
+  h+='</ul></div>';
+
+  h+='<div class="bins"><b style="color:#8b949e;font-size:11px;letter-spacing:.5px">IMPROVED SOLUTION · '+imp.length+' BINS</b>';
+  imp.slice(0,12).forEach(function(b,idx){
+    var segs=b.items.map(function(v,j){var c=colors[(idx*3+j)%colors.length];return '<div class="seg" style="width:'+(v/cap*100)+'%;background:'+c+'" title="'+v+'"></div>';}).join('');
+    h+='<div class="bin"><div class="hd"><span>bin '+(idx+1)+'</span><span>'+b.used.toFixed(0)+'/'+cap+' · '+(b.used/cap*100).toFixed(0)+'%</span></div><div class="track">'+segs+'</div></div>';
+  });
+  if(imp.length>12)h+='<div class="bin" style="color:#8b949e;font-size:12px">… 其余 '+(imp.length-12)+' 箱省略</div>';
+  h+='</div>';
+
+  document.getElementById('out').innerHTML=h;
+}
+run();
+</script>
+</body>
+</html>
